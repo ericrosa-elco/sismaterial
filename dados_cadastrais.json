@@ -1,0 +1,17 @@
+{
+    "eric.rosa@elco.com.br": {
+        "nome": "Eric de Oliveira Rosa",
+        "senha": "Elco@0",
+        "perfil": "adm_master"
+    },
+    "nelluana.ribas@elco.com.br": {
+        "nome": "Nelluana Ferreira Ribas",
+        "senha": "Elco@2",
+        "perfil": "adm_master"
+    },
+    "elco@elco.com.br": {
+        "nome": "Elco Silva",
+        "senha": "Elco@1",
+        "perfil": "adm_master"
+    }
+}
