@@ -88,15 +88,15 @@ def carregar_regras():
     return regras
 
 def carregar_codigos_erp():
-    import sqlite3
     conn = sqlite3.connect("dados.db")
     cursor = conn.cursor()
-
     cursor.execute("SELECT descricao, codigo_erp FROM codigos_erp")
-    resultado = cursor.fetchall()
-
+    dados = cursor.fetchall()
     conn.close()
-    return dict(resultado)
+    return {desc.strip(): cod for desc, cod in dados}
+
+def normalizar_descricao(texto):
+    return " ".join(texto.strip().upper().split())
 
 def salvar_codigo_erp(descricao, codigo):
     import sqlite3
@@ -469,12 +469,10 @@ def pagina_principal():
         st.divider()
         ###Banco de Dados abaixo do gerador
         parametros = carregar_regras()
-
-
-        codigos_erp = {}
         codigos_erp = carregar_codigos_erp()
-        #Gerando todas as combinações
+
         linhas = []
+        descricoes_com_codigo = set()
 
         for nome_item, dados in parametros.items():
             ordem = dados.get("ordem", [])
@@ -483,19 +481,25 @@ def pagina_principal():
 
             for combinacao in combinacoes:
                 descricao = f"{nome_item} " + " ".join(combinacao).strip()
-                codigo = codigos_erp.get(descricao, "")
-                linhas.append((codigo, descricao))
-        #Converte para dataframe
-        df = pd.DataFrame(linhas, columns=["Código ERP", "Descrição"])
-        #Filtros
-        col1, col2 = st.columns([2, 2])
+                descricao_norm = normalizar_descricao(descricao)
 
+                if descricao_norm in codigos_erp:
+                    if descricao_norm not in descricoes_com_codigo:
+                        linhas.append((codigos_erp[descricao_norm], descricao_norm))
+                        descricoes_com_codigo.add(descricao_norm)
+                else:
+                    linhas.append(("", descricao_norm))
+
+        # Convertendo em DataFrame
+        df = pd.DataFrame(linhas, columns=["Código ERP", "Descrição"])
+
+        # Filtros
+        col1, col2 = st.columns([2, 2])
         with col1:
             filtro_status = st.selectbox("Filtros:", ["Todos", "Com código registrado", "Sem código registrado"])
-
         with col2:
             termo_busca = st.text_input("Buscar na descrição:")
-        #Aplicação dos filtros
+
         if filtro_status == "Com código registrado":
             df = df[df["Código ERP"].astype(bool)]
         elif filtro_status == "Sem código registrado":
@@ -504,11 +508,10 @@ def pagina_principal():
         if termo_busca:
             df = df[df["Descrição"].str.lower().str.contains(termo_busca.strip().lower())]
 
-        #Exibição final
+        # Exibição final
         st.markdown("### Banco de Dados")
         df = df.sort_values(by="Código ERP", ascending=False, na_position='first')
         st.dataframe(df.reset_index(drop=True), use_container_width=True)
-
 ###########################################################Página Cadastro/Editar Itens
     elif pagina_selecionada == "Cadastro/Edição de Itens":
         st.title("Cadastro e Edição de Itens")
