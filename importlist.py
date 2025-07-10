@@ -993,7 +993,7 @@ def pagina_principal():
             unsafe_allow_html=True
         )
         st.markdown(
-            '[Contato Eric Rosa - Desenvolvedor](mailto:nelluana.ribas@elco.com.br)',
+            '[Contato Eric Rosa - Desenvolvedor](mailto:eric.rosa@elco.com.br)',
             unsafe_allow_html=True
         )
         st.divider()
