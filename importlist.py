@@ -10,7 +10,7 @@ from collections import defaultdict
 
 #MAJOR.MINOR.PATCH[-LABEL]
 #-alpha: versão bem inicial, instável -beta: quase pronta, mas precisa de feedback -rc.1: release candidate (quase final)
-Versao = "V1.0.0-rc.1"
+Versao = "V1.1.2-rc.1"
 
 #Config da página
 st.set_page_config(
@@ -150,46 +150,54 @@ def carregar_insumos_pendentes():
 ###########################################################Interface das Páginas
 
 def pagina_login_cadastro():
-    st.title("Autenticação de Usuário")
-    menu = st.sidebar.selectbox("Menu", ["Login", "Cadastro"])
-    usuarios = carregar_usuarios()
-    st.sidebar.text(Versao)
-    st.sidebar.text("Versão de testes. Nenhum dos dados salvos aqui serão trabalhados como oficiais.")
+    col1, col2, col3 = st.columns([1, 2, 1])
 
-    if menu == "Login":
-        st.subheader("Login")
-        with st.form("login_form"):
-            email = st.text_input("E-mail").strip().lower()
-            senha = st.text_input("Senha", type="password")
-            submitted = st.form_submit_button("Entrar")
-            
-            if submitted:
-                if autenticar_usuario(email, senha, usuarios):
-                    st.session_state['logged_in'] = True
-                    st.session_state['username'] = usuarios[email]["nome"]
-                    st.session_state['email'] = email
-                    st.rerun()
-                else:
-                    st.error("E-mail ou senha incorretos.")
+    with col2:    
+        st.title("Autenticação de Usuário")
+        menu = st.sidebar.selectbox("Menu", ["Login", "Cadastro"])
+        usuarios = carregar_usuarios()
+        st.sidebar.text(Versao)
 
-    elif menu == "Cadastro":
-        st.subheader("Cadastro")
-        with st.form("cadastro_form"):
-            nome = st.text_input("Nome completo do usuário").strip()
-            email = st.text_input("E-mail").strip().lower()
-            senha = st.text_input("Senha", type="password")
-            confirmar_senha = st.text_input("Confirme a senha", type="password")
-            submitted = st.form_submit_button("Cadastrar")
+        if menu == "Login":
+            st.subheader("Login")
+            with st.form("login_form"):
+                email = st.text_input("E-mail").strip().lower()
+                senha = st.text_input("Senha", type="password")
+                submitted = st.form_submit_button("Entrar")
+                
+                if submitted:
+                    if autenticar_usuario(email, senha, usuarios):
+                        st.session_state['logged_in'] = True
+                        st.session_state['username'] = usuarios[email]["nome"]
+                        st.session_state['email'] = email
+                        st.rerun()
+                    else:
+                        st.error("E-mail ou senha incorretos.")
 
-            if submitted:
-                if not nome or not email or not senha or not confirmar_senha:
-                    st.warning("Preencha todos os campos.")
-                elif senha != confirmar_senha:
-                    st.warning("As senhas não coincidem.")
-                elif cadastrar_usuario(email, nome, senha, usuarios):
-                    st.success("Usuário criado com sucesso! Faça login para continuar.")
-                else:
-                    st.error("Este e-mail já está cadastrado.")
+        elif menu == "Cadastro":
+            st.subheader("Cadastro")
+            with st.form("cadastro_form"):
+                nome = st.text_input("Nome completo do usuário").strip()
+                email = st.text_input("E-mail").strip().lower()
+                senha = st.text_input("Senha", type="password")
+                confirmar_senha = st.text_input("Confirme a senha", type="password")
+                submitted = st.form_submit_button("Cadastrar")
+
+                if submitted:
+                    if not nome or not email or not senha or not confirmar_senha:
+                        st.warning("Preencha todos os campos.")
+                    elif senha != confirmar_senha:
+                        st.warning("As senhas não coincidem.")
+                    elif cadastrar_usuario(email, nome, senha, usuarios):
+                        st.success("Usuário criado com sucesso! Faça login para continuar.")
+                    else:
+                        st.error("Este e-mail já está cadastrado.")
+        st.markdown("""
+            <hr style='margin-top: 50px;'>
+            <div style='text-align: center; font-size: 13px; color: gray;'>
+                © Elco Engenharia, 2025 - Todos os direitos reservados
+            </div>
+        """, unsafe_allow_html=True)
 
 def pagina_principal():
     """Exibe a aplicação principal após o login."""
@@ -521,7 +529,10 @@ def pagina_principal():
 
         if modo == "Solicitar Cadastro de Item":
             st.subheader("Solicitar cadastro de novo item")
-
+            st.markdown(
+            '[Clique aqui para checar NCM](https://portalunico.siscomex.gov.br/classif/#/sumario?perfil=publico)',
+            unsafe_allow_html=True
+        )
             if "etapa_parametros" not in st.session_state:
                 st.session_state.etapa_parametros = False
 
@@ -551,7 +562,7 @@ def pagina_principal():
                     entrada = st.text_area(f"Valores para '{param.upper()}' (separar por vírgula)", key=f"valores_{param}")
                     valores_comuns[param] = [v.strip() for v in entrada.split(",") if v.strip()]
 
-                if st.button("Cadastrar Item"):
+                if st.button("Solicitar Cadastro"):
                     # Verifica se pelo menos um valor foi preenchido
                     preenchido = any(valores for valores in valores_comuns.values() if valores)
 
@@ -591,10 +602,18 @@ def pagina_principal():
                                         )
                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                     """, (
-                                        nome_item, ordem, parametro, valor,
-                                        criado_por, nome_usuario, data,
-                                        status, "", ""  # justificativa_admin, codigo_erp
+                                        nome_item.upper(),  # já vem em maiúsculo, mas por garantia
+                                        ordem.upper(),      # pode deixar como está se for string simples
+                                        parametro.upper(),
+                                        valor.upper(),
+                                        criado_por,
+                                        nome_usuario,
+                                        data,
+                                        status,
+                                        "",  # justificativa_admin
+                                        ""   # codigo_erp
                                     ))
+
 
                         conn.commit()
                         conn.close()
@@ -956,28 +975,41 @@ def pagina_principal():
     if pagina_selecionada == "Suporte":
         st.title("Suporte do Sistema")
         st.divider()
+        st.markdown("**Acesso ao portal de tickets do sistema**")
+        st.markdown(
+            '[Portal de Tickets Sismaterial](https://ticketssismaterialelco.onrender.com)',
+            unsafe_allow_html=True
+        )
+        st.divider()
         st.markdown("**Entrar em contato por email:**")
         st.markdown(
-            '[Contato Nelluana Ribas](mailto:nelluana.ribas@elco.com.br)',
+            '[Contato Nelluana Ribas - Administradora](mailto:nelluana.ribas@elco.com.br)',
             unsafe_allow_html=True
         )
         st.markdown(
-            '[Contato Eric Rosa](mailto:nelluana.ribas@elco.com.br)',
+            '[Contato Eric Rosa - Desenvolvedor](mailto:nelluana.ribas@elco.com.br)',
             unsafe_allow_html=True
         )
         st.divider()
         st.markdown("**Documentações disponíveis:**")
         st.markdown(
-            '[Manual do Sistema](link do documento)',
+            '[Manual de uso do Sistema](link do documento)',
             unsafe_allow_html=True
         )
         st.markdown(
-            '[Manual PDMS](https://elcoeng-my.sharepoint.com/:b:/g/personal/eric_rosa_elco_com_br/EYYs1UgcJJlIsPyaB1GwvFMB59wAFMH2GjFK-mguX7Z2Zg?e=qElMFj)',
+            '[Manual: Padrão Descritivo de Materiais e Serviços](https://elcoeng-my.sharepoint.com/:b:/g/personal/eric_rosa_elco_com_br/EYYs1UgcJJlIsPyaB1GwvFMB59wAFMH2GjFK-mguX7Z2Zg?e=qElMFj)',
             unsafe_allow_html=True
         )
         st.divider()
         st.markdown("**Versão do Sistema:**")
         st.text(Versao)
+
+        st.markdown("""
+            <hr style='margin-top: 50px;'>
+            <div style='text-align: center; font-size: 13px; color: gray;'>
+                © Elco Engenharia, 2025 - Todos os direitos reservados
+            </div>
+        """, unsafe_allow_html=True)
 
     if pagina_selecionada == "Terminar sessão":
         st.session_state['logged_in'] = False
