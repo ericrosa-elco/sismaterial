@@ -10,7 +10,7 @@ from collections import defaultdict
 
 #MAJOR.MINOR.PATCH[-LABEL]
 #-alpha: versão bem inicial, instável -beta: quase pronta, mas precisa de feedback -rc.1: release candidate (quase final)
-Versao = "V1.1.2-rc.1"
+Versao = "V1.1.3-rc.1"
 
 #Config da página
 st.set_page_config(
@@ -170,6 +170,7 @@ def pagina_login_cadastro():
                         st.session_state['logged_in'] = True
                         st.session_state['username'] = usuarios[email]["nome"]
                         st.session_state['email'] = email
+                        st.session_state.toast_msg = f"Logado como: '{st.session_state.get('username', '')}'"
                         st.rerun()
                     else:
                         st.error("E-mail ou senha incorretos.")
@@ -190,6 +191,7 @@ def pagina_login_cadastro():
                         st.warning("As senhas não coincidem.")
                     elif cadastrar_usuario(email, nome, senha, usuarios):
                         st.success("Usuário criado com sucesso! Faça login para continuar.")
+                        st.session_state.toast_msg = "Usuário criado."
                     else:
                         st.error("Este e-mail já está cadastrado.")
         st.markdown("""
@@ -221,6 +223,10 @@ def pagina_principal():
         )
 
 ###########################################################Página Início
+    if "toast_msg" in st.session_state:
+            st.toast(st.session_state.toast_msg)
+            del st.session_state.toast_msg
+
     if pagina_selecionada == "Início":
 
         insumos_dict = carregar_insumos_pendentes()
@@ -256,7 +262,7 @@ def pagina_principal():
             pass
 
         st.markdown(f"""
-        #### Olá, **{st.session_state.get('username', '')}** 👋
+        #### Olá, {st.session_state.get('username', '')} 👋
         Este é o sistema interno para padronização de descrições técnicas da Elco Engenharia.
 
         ---
@@ -373,7 +379,7 @@ def pagina_principal():
                                     conn.commit()
                                     conn.close()
 
-                                st.success(f"Insumo '{item['nome_item']}' aprovado e atualizado no banco.")
+                                st.session_state.toast_msg = f"Insumo '{item['nome_item']}' aprovado e atualizado no banco."
                                 st.rerun()
 
                             if col2.button("❌ Rejeitar", key=f"rejeitar_{idx}"):
@@ -390,7 +396,7 @@ def pagina_principal():
                                 conn.commit()
                                 conn.close()
 
-                                st.warning(f"Insumo '{item['nome_item']}' foi rejeitado.")
+                                st.session_state.toast_msg = f"Insumo '{item['nome_item']}' foi rejeitado."
                                 st.rerun()
 
                         # --- Botão de excluir para itens aprovados ou rejeitados ---
@@ -404,7 +410,7 @@ def pagina_principal():
                                 conn.commit()
                                 conn.close()
 
-                                st.success(f"Insumo '{item['nome_item']}' removido da visualização.")
+                                st.session_state.toast_msg = f"Insumo '{item['nome_item']}' removido da visualização."
                                 st.rerun()
 
 ###########################################################Página Gerador de Premissas
@@ -465,7 +471,7 @@ def pagina_principal():
                                 st.warning("Não cadastrado")
                                 if novo_codigo:
                                     salvar_codigo_erp(resultado, novo_codigo)
-                                    st.success("Código ERP salvo com sucesso.")
+                                    st.session_state.toast_msg = f"Código ERP salvo com sucesso."
                                     st.rerun()
 
                         with col_desc:
@@ -621,12 +627,11 @@ def pagina_principal():
                         st.success(f"Insumo '{novo_insumo['nome_item']}' enviado para aprovação.")
 
                         # Resetar estado temporário
+                        st.session_state.toast_msg = f"Insumo '{novo_insumo['nome_item']}' enviado para aprovação."
                         st.session_state.etapa_parametros = False
                         del st.session_state.nome_item_temp
                         del st.session_state.ordem_temp
                         st.rerun()
-
-
 
         elif modo == "Editar Item Existente":
             st.subheader("Editar item existente")
@@ -739,7 +744,7 @@ def pagina_principal():
                 mensagens.append(nova)
                 with open(ARQ_CHAT, "w", encoding="utf-8") as f:
                     json.dump(mensagens, f, indent=4, ensure_ascii=False)
-                st.success("Mensagem enviada.")
+                st.session_state.toast_msg = "Mensagem enviada."
                 st.rerun()
 
         #Mensagens
@@ -798,7 +803,8 @@ def pagina_principal():
                                 elif novo_perfil != perfil:
                                     usuarios[email]["perfil"] = novo_perfil
                                     salvar_usuarios(usuarios)
-                                    st.success(f"Perfil de {nome} atualizado para '{novo_perfil}'.")
+                                    st.success()
+                                    st.session_state.toast_msg = f"Perfil de {nome} atualizado para '{novo_perfil}'."
                                     st.rerun()
 
                     #Pedir confirmação da ação (exclusão)
@@ -809,7 +815,7 @@ def pagina_principal():
                             if st.button("✅ Confirmar", key=f"confirma_{email}"):
                                 del usuarios[email]
                                 salvar_usuarios(usuarios)
-                                st.success(f"Usuário '{nome}' excluído com sucesso.")
+                                st.session_state.toast_msg = f"Usuário '{nome}' excluído com sucesso."
                                 st.session_state[f"confirm_excluir_{email}"] = False
                                 st.rerun()
                         with col_cancela:
@@ -1048,3 +1054,12 @@ f"""
 """,
     unsafe_allow_html=True
 )
+
+st.markdown("""
+    <style>
+    /* Oculta a barra “Running...” do topo (versões recentes) */
+    [data-testid="stStatusWidget"] {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
