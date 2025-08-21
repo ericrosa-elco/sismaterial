@@ -7,10 +7,13 @@ import sqlite3
 from datetime import datetime
 from itertools import product
 from collections import defaultdict
+from werkzeug.security import generate_password_hash, check_password_hash
 
 #MAJOR.MINOR.PATCH[-LABEL]
 #-alpha: versão bem inicial, instável -beta: quase pronta, mas precisa de feedback -rc.1: release candidate (quase final)
-Versao = "V1.1.3-rc.1"
+Versao = "V1.2.0-rc.1"
+
+USERS_DB = "dados.db"
 
 #Config da página
 st.set_page_config(
@@ -25,34 +28,74 @@ st.logo(
     icon_image=None
 )
 
-#Funções de autenticação
-def carregar_usuarios():
-    if os.path.exists("dados_cadastrais.json"):
-        with open("dados_cadastrais.json", "r", encoding='utf-8') as file:
-            try:
-                return json.load(file)
-            except json.JSONDecodeError:
-                return {}
-    return {}
+from werkzeug.security import generate_password_hash, check_password_hash
+import sqlite3
 
-def salvar_usuarios(usuarios):
-    with open("dados_cadastrais.json", "w", encoding='utf-8') as file:
-        json.dump(usuarios, file, indent=4, ensure_ascii=False)
-
-def cadastrar_usuario(email, nome, senha, usuarios):
-    """Cadastra novo usuário usando e-mail como chave"""
-    if email in usuarios:
+def cadastrar_usuario(email, nome, senha, _ignored_dict):
+    """Insere no SQLite usando hash de senha (Werkzeug). Perfil padrão = 'comum'."""
+    try:
+        conn = sqlite3.connect("dados.db")
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO usuarios (nome, email, senha_hash, perfil)
+            VALUES (?, ?, ?, 'comum')
+        """, (nome, email, generate_password_hash(senha)))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        # e-mail já existe
         return False
-    usuarios[email] = {
-        "nome": nome,
-        "senha": senha
-    }
-    salvar_usuarios(usuarios)
-    return True
+    finally:
+        conn.close()
 
-def autenticar_usuario(email, senha, usuarios):
-    """Autentica usando e-mail e senha"""
-    return email in usuarios and usuarios[email]["senha"] == senha
+def autenticar_usuario(email, senha, _ignored_dict):
+    """Confere hash da senha no SQLite."""
+    conn = sqlite3.connect("dados.db")
+    c = conn.cursor()
+    c.execute("SELECT senha_hash, nome, perfil FROM usuarios WHERE email = ?", (email,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return False
+    senha_hash, nome, perfil = row
+    ok = check_password_hash(senha_hash, senha)
+    if ok:
+        # guarda no session_state para uso posterior
+        st.session_state['username'] = nome
+        st.session_state['perfil'] = perfil
+    return ok
+
+# para a pagina de usuarios
+def get_perfil(email):
+    conn = sqlite3.connect("dados.db")
+    c = conn.cursor()
+    c.execute("SELECT perfil FROM usuarios WHERE email = ?", (email,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else "comum"
+
+def list_usuarios():
+    conn = sqlite3.connect("dados.db")
+    c = conn.cursor()
+    c.execute("SELECT email, nome, perfil FROM usuarios ORDER BY nome")
+    rows = c.fetchall()
+    conn.close()
+    return rows  # (email, nome, perfil), etc
+
+def update_perfil(email, novo_perfil):
+    conn = sqlite3.connect("dados.db")
+    c = conn.cursor()
+    c.execute("UPDATE usuarios SET perfil = ? WHERE email = ?", (novo_perfil, email))
+    conn.commit()
+    conn.close()
+
+def delete_usuario(email):
+    conn = sqlite3.connect("dados.db")
+    c = conn.cursor()
+    c.execute("DELETE FROM usuarios WHERE email = ?", (email,))
+    conn.commit()
+    conn.close()
+
 
 def carregar_regras():
     regras = {}
@@ -155,7 +198,6 @@ def pagina_login_cadastro():
     with col2:    
         st.title("Autenticação de Usuário")
         menu = st.sidebar.selectbox("Menu", ["Login", "Cadastro"])
-        usuarios = carregar_usuarios()
         st.sidebar.text(Versao)
 
         if menu == "Login":
@@ -166,14 +208,14 @@ def pagina_login_cadastro():
                 submitted = st.form_submit_button("Entrar")
                 
                 if submitted:
-                    if autenticar_usuario(email, senha, usuarios):
+                    if autenticar_usuario(email, senha, None):
                         st.session_state['logged_in'] = True
-                        st.session_state['username'] = usuarios[email]["nome"]
                         st.session_state['email'] = email
                         st.session_state.toast_msg = f"Logado como: '{st.session_state.get('username', '')}'"
                         st.rerun()
                     else:
                         st.error("E-mail ou senha incorretos.")
+
 
         elif menu == "Cadastro":
             st.subheader("Cadastro")
@@ -189,7 +231,7 @@ def pagina_login_cadastro():
                         st.warning("Preencha todos os campos.")
                     elif senha != confirmar_senha:
                         st.warning("As senhas não coincidem.")
-                    elif cadastrar_usuario(email, nome, senha, usuarios):
+                    elif cadastrar_usuario(email, nome, senha, None):
                         st.success("Usuário criado com sucesso! Faça login para continuar.")
                         st.session_state.toast_msg = "Usuário criado."
                     else:
@@ -323,12 +365,12 @@ def pagina_principal():
                             valores = item['valores_comuns'].get(p, [])
                             st.markdown(f"- **{p.upper()}**: {', '.join(valores) if valores else '—'}")
 
-                        perfil_logado = carregar_usuarios().get(st.session_state.get("email", ""), {}).get("perfil", "usuario")
+                        perfil_logado = get_perfil(st.session_state.get("email", ""))
 
                         # Aprovação e rejeição
                         if perfil_logado in ["adm", "adm_master"] and item['status'] == "pendente":
                             # Campo obrigatório: justificativa + código do item (ERP)
-                            perfil_logado = carregar_usuarios().get(st.session_state.get("email", ""), {}).get("perfil", "usuario")
+                            perfil_logado = get_perfil(st.session_state.get("email", ""))
 
                         if perfil_logado in ["adm", "adm_master"] and item['status'] == "pendente":
                             justificativa_admin = st.text_area("Justificativa:", key=f"justificativa_{idx}")
@@ -337,7 +379,7 @@ def pagina_principal():
                             if col1.button("✅ Aprovar", key=f"aprovar_{idx}"):
                                 item['status'] = "aprovado"
                                 item['justificativa_admin'] = justificativa_admin.strip()
-                                # ➕ Salvando código ERP no banco (se preenchido)
+                                # Salvando código ERP no banco (se preenchido)
                                 descricao_final = f"{item['nome_item']} " + " ".join(
                                     v.strip() for p in item['ordem'] for v in item['valores_comuns'].get(p, [])
                                 ).strip().upper()
@@ -399,7 +441,7 @@ def pagina_principal():
                                 st.session_state.toast_msg = f"Insumo '{item['nome_item']}' foi rejeitado."
                                 st.rerun()
 
-                        # --- Botão de excluir para itens aprovados ou rejeitados ---
+                        # Botão de excluir para itens aprovados ou rejeitados
                         if perfil_logado == "adm_master" and item['status'] in ["aprovado", "rejeitado"]:
                             if st.button("🗑️ Excluir da visualização", key=f"excluir_{idx}"):
                                 import sqlite3
@@ -418,9 +460,6 @@ def pagina_principal():
         st.title("Padrão Descritivo de Materiais e Serviços")
 
         regras = carregar_regras()
-
-        if not regras:
-            st.info("⚠️ Nenhuma premissa cadastrada ainda.")
 
         if regras:
             #Adicionado index=None para não pré-selecionar
@@ -638,7 +677,7 @@ def pagina_principal():
             if not regras:
                 st.warning("Nenhum item cadastrado ainda.")
             else:
-                item_selecionado = st.selectbox("Selecione o item para editar:", sorted(list(regras.keys())))
+                item_selecionado = st.selectbox("Selecione o item para editar:", sorted(list(regras.keys())), index=None,)
                 if item_selecionado:
                     item_data = regras[item_selecionado]
                     st.write(f"Parâmetros na ordem: `{'`, `'.join(item_data['ordem'])}`")
@@ -685,7 +724,7 @@ def pagina_principal():
             if not regras:
                 st.warning("Nenhum item cadastrado.")
             else:
-                item_para_excluir = st.selectbox("Selecione o item:", sorted(list(regras.keys())))
+                item_para_excluir = st.selectbox("Selecione o item:", sorted(list(regras.keys())), index=None)
                 justificativa = st.text_area("Justificativa para a exclusão do item selecionado:")
 
                 if st.button("📩 Solicitar Exclusão"): 
@@ -764,9 +803,9 @@ def pagina_principal():
 
 ###########################################################Página Usuários
     elif pagina_selecionada == "Usuários":
-        usuarios = carregar_usuarios()
         email_logado = st.session_state.get("email", "")
-        perfil_logado = usuarios.get(email_logado, {}).get("perfil", "usuario")
+        perfil_logado = get_perfil(email_logado)
+
 
         st.title("Gerenciamento de Usuários")
 
@@ -775,10 +814,8 @@ def pagina_principal():
         else:
             st.success("Você está logado como *Adm Master*. Pode gerenciar os demais usuários.")
 
-            for email, dados in usuarios.items():
-                nome = dados.get("nome", "—")
-                perfil = dados.get("perfil", "usuario")
-
+            for email, nome, perfil in list_usuarios():
+                # aqui 'nome' e 'perfil' já vêm direto da consulta SQL
                 col1, col2, col3 = st.columns([3, 2, 2])
                 with col1:
                     st.markdown(f"**{nome}** (`{email}`)")
@@ -801,8 +838,7 @@ def pagina_principal():
                                 if novo_perfil == "excluir conta":
                                     st.session_state[f"confirm_excluir_{email}"] = True
                                 elif novo_perfil != perfil:
-                                    usuarios[email]["perfil"] = novo_perfil
-                                    salvar_usuarios(usuarios)
+                                    update_perfil(email, novo_perfil)
                                     st.success()
                                     st.session_state.toast_msg = f"Perfil de {nome} atualizado para '{novo_perfil}'."
                                     st.rerun()
@@ -813,8 +849,8 @@ def pagina_principal():
                         col_confirma, col_cancela = st.columns(2)
                         with col_confirma:
                             if st.button("✅ Confirmar", key=f"confirma_{email}"):
-                                del usuarios[email]
-                                salvar_usuarios(usuarios)
+                                delete_usuario(email)
+
                                 st.session_state.toast_msg = f"Usuário '{nome}' excluído com sucesso."
                                 st.session_state[f"confirm_excluir_{email}"] = False
                                 st.rerun()
@@ -993,7 +1029,7 @@ def pagina_principal():
             unsafe_allow_html=True
         )
         st.markdown(
-            '[Contato Eric Rosa - Desenvolvedor](mailto:eric.rosa@elco.com.br)',
+            '[Contato Eric Rosa - Desenvolvedor](mailto:nelluana.ribas@elco.com.br)',
             unsafe_allow_html=True
         )
         st.divider()
